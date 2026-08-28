@@ -1,0 +1,46 @@
+{
+  "name": "@larva-factory/ai-pr-reviewer",
+  "version": "1.0.0",
+  "description": "Reusable AI-powered pull request review engine with GitHub and OpenAI integration",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    }
+  },
+  "bin": {
+    "ai-pr-review": "./dist/cli/bin.js"
+  },
+  "files": [
+    "dist",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alerodriguez162/ai-pr-reviewer.git"
+  },
+  "keywords": [
+    "github",
+    "pull-request",
+    "code-review",
+    "openai",
+    "llm",
+    "github-action"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@octokit/rest": "^21.0.2",
+    "openai": "^4.77.0",
+    "zod": "^3.24.1"
+  }
+}

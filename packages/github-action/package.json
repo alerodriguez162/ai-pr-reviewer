@@ -1,0 +1,15 @@
+{
+  "name": "@larva-factory/ai-pr-reviewer-action",
+  "version": "1.0.0",
+  "private": true,
+  "description": "GitHub Action entrypoint for the AI Pull Request Reviewer",
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "bundle": "node ../../scripts/bundle-action.mjs"
+  },
+  "dependencies": {
+    "@actions/core": "^1.11.1",
+    "@larva-factory/ai-pr-reviewer": "*"
+  }
+}

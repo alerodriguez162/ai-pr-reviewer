@@ -1,0 +1,23 @@
+{
+  "name": "@larva-factory/ai-pr-reviewer-cli",
+  "version": "1.0.0",
+  "description": "CLI for the AI Pull Request Reviewer",
+  "type": "module",
+  "bin": {
+    "ai-pr-review": "./dist/index.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "demo": "node dist/index.js --demo"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "license": "MIT",
+  "dependencies": {
+    "@larva-factory/ai-pr-reviewer": "*"
+  }
+}
