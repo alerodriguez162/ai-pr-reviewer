@@ -21,11 +21,27 @@ import { createLogger, silentLogger } from "./logging/logger.js";
 import { aiChunkReviewSchema } from "./schemas/review.js";
 import { toUserFacingError } from "./errors/index.js";
 import { SEVERITY_ORDER } from "./types/index.js";
+import { parsePlaybook, PLAYBOOK_PATHS, EMPTY_PLAYBOOK, resolveContextConfig } from "./review/playbook.js";
+import {
+  applyLearning,
+  harvestFeedback,
+  mergeMemory,
+  parseMemory,
+  serializeMemory,
+  findingFingerprint,
+  findingMarker,
+  MEMORY_ISSUE_TITLE,
+} from "./review/memory.js";
+import { loadRelatedContext } from "./context/loader.js";
+import { DEFAULT_CONTEXT_CONFIG } from "./context/expansion.js";
 
 export type {
   PullRequestReview,
   ReviewFinding,
   ReviewOptions,
+  ReviewPlaybook,
+  ReviewMemory,
+  ReviewMemoryEntry,
   AIProvider,
   GitHubPort,
   PullRequestRef,
@@ -74,4 +90,18 @@ export {
   aiChunkReviewSchema,
   toUserFacingError,
   SEVERITY_ORDER,
+  parsePlaybook,
+  PLAYBOOK_PATHS,
+  EMPTY_PLAYBOOK,
+  resolveContextConfig,
+  applyLearning,
+  harvestFeedback,
+  mergeMemory,
+  parseMemory,
+  serializeMemory,
+  findingFingerprint,
+  findingMarker,
+  MEMORY_ISSUE_TITLE,
+  loadRelatedContext,
+  DEFAULT_CONTEXT_CONFIG,
 };

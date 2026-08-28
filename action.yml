@@ -4,7 +4,7 @@ author: larva-factory
 
 inputs:
   github-token:
-    description: GitHub token used to read the pull request and publish the review. Prefer secrets.GITHUB_TOKEN.
+    description: GitHub token used to read the pull request, load the default-branch playbook, persist review memory, and publish the review. Requires contents:read, pull-requests:write, and issues:write. Prefer secrets.GITHUB_TOKEN.
     required: true
   openai-api-key:
     description: OpenAI API key. Store this as a repository or organization secret. Never log it.

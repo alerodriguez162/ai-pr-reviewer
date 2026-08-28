@@ -11,6 +11,7 @@ import type {
 import { CONFIDENCE_ORDER, SEVERITY_ORDER } from "../types/index.js";
 import { isChangedLine } from "./diff.js";
 import { formatReviewMarkdown } from "../review/formatter.js";
+import { findingFingerprint, findingMarker } from "../review/memory.js";
 
 export const REVIEW_COMMENT_MARKER = "<!-- ai-pr-reviewer -->";
 
@@ -102,14 +103,16 @@ export class GitHubReviewPublisher {
 }
 
 function formatInlineFinding(finding: ReviewFinding): string {
+  const fingerprint = findingFingerprint(finding);
   return [
+    findingMarker(fingerprint),
     `**${finding.severity.toUpperCase()}** (${finding.category}) — ${finding.title}`,
     "",
     finding.description,
     finding.suggestion ? `\nSuggested action: ${finding.suggestion}` : "",
     `\nConfidence: ${finding.confidence}`,
     "",
-    "_AI-generated finding. Verify manually._",
+    "_AI-generated finding. Verify manually. React 👍/👎 to train the next review._",
   ]
     .filter(Boolean)
     .join("\n");

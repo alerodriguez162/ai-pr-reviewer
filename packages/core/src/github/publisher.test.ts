@@ -45,6 +45,8 @@ describe("publisher and comments", () => {
     const markdown = formatReviewMarkdown(review);
     expect(markdown).toContain("**Score:** 72/100");
     expect(markdown).toContain("Potential Authorization Bypass");
+    expect(markdown).toContain("How to personalize this reviewer");
+    expect(markdown).toContain("ai-review ignore:");
     expect(markdown).not.toContain('"riskLevel"');
   });
 
@@ -54,6 +56,8 @@ describe("publisher and comments", () => {
       id: 99,
       body: `${REVIEW_COMMENT_MARKER}\nold`,
       user: "bot",
+      thumbsUp: 0,
+      thumbsDown: 0,
     });
     const publisher = new GitHubReviewPublisher(github);
     const result = await publisher.publish(
@@ -89,5 +93,6 @@ describe("publisher and comments", () => {
     });
     expect(comments.length).toBe(1);
     expect(comments[0]?.path).toBe("src/api/users.ts");
+    expect(comments[0]?.body).toContain("<!-- finding-fp:security:potential-authorization-bypass -->");
   });
 });

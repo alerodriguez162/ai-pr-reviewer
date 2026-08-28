@@ -52,6 +52,7 @@ export async function runAction(
     maxDiffChars: inputs.maxDiffSize,
     reviewTests: inputs.reviewTests,
     reviewSecurity: inputs.reviewSecurity,
+    persistMemory: true,
     logger: runtime.logger,
     github,
   });

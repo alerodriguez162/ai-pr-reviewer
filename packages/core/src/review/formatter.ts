@@ -101,6 +101,13 @@ ${manual}
 
 ---
 AI-generated review. Verify important findings manually.
+
+## How to personalize this reviewer
+
+- React 👍 or 👎 on inline findings. The next review learns from that feedback.
+- Comment \`ai-review ignore: category:title\` to suppress similar findings, or \`ai-review keep: category:title\` to keep them.
+- Team rules live in \`.ai-pr-reviewer.yml\` on the **default branch** (never the PR head).
+- Learned feedback is stored in the GitHub issue \`[ai-pr-reviewer] Review memory\`.
 `;
 }
 

@@ -68,6 +68,68 @@ export interface ReviewMetadata {
   filesReviewed: number;
   filesSkippedGenerated: number;
   filesSkippedOversized: number;
+  playbookLoaded?: boolean;
+  memoryEntries?: number;
+  suppressedFindings?: number;
+  contextFilesLoaded?: number;
+  contextTruncated?: boolean;
+}
+
+export interface ReviewContextConfig {
+  enabled?: boolean;
+  maxDepth?: number;
+  maxFiles?: number;
+  maxFileChars?: number;
+  followImports?: boolean;
+  findConsumers?: boolean;
+  includePaths?: string[];
+  excludePaths?: string[];
+  consumerScanLimit?: number;
+}
+
+export interface ReviewPlaybook {
+  focus: string[];
+  ignoreCategories: FindingCategory[];
+  ignorePaths: string[];
+  ignoreTitles: string[];
+  style?: string;
+  domainNotes: string[];
+  context?: ReviewContextConfig;
+}
+
+export type FeedbackVerdict = "helpful" | "unhelpful";
+
+export interface ReviewMemoryEntry {
+  fingerprint: string;
+  category: FindingCategory;
+  title: string;
+  file?: string;
+  verdict: FeedbackVerdict;
+  count: number;
+  updatedAt: string;
+}
+
+export interface ReviewMemory {
+  entries: ReviewMemoryEntry[];
+}
+
+export interface ReviewOptions {
+  owner: string;
+  repo: string;
+  pullRequest: number;
+  githubToken: string;
+  ai: AIProviderConfig;
+  maxFiles?: number;
+  maxDiffChars?: number;
+  maxChunkChars?: number;
+  reviewTests?: boolean;
+  reviewSecurity?: boolean;
+  logger?: ReviewLogger;
+  github?: GitHubPort;
+  aiProvider?: AIProvider;
+  playbook?: ReviewPlaybook;
+  memory?: ReviewMemory;
+  persistMemory?: boolean;
 }
 
 export interface PullRequestReview {
@@ -132,22 +194,6 @@ export interface AIProviderConfig {
   maxRetries?: number;
 }
 
-export interface ReviewOptions {
-  owner: string;
-  repo: string;
-  pullRequest: number;
-  githubToken: string;
-  ai: AIProviderConfig;
-  maxFiles?: number;
-  maxDiffChars?: number;
-  maxChunkChars?: number;
-  reviewTests?: boolean;
-  reviewSecurity?: boolean;
-  logger?: ReviewLogger;
-  github?: GitHubPort;
-  aiProvider?: AIProvider;
-}
-
 export interface ReviewLogger {
   info(message: string, extra?: Record<string, unknown>): void;
   warn(message: string, extra?: Record<string, unknown>): void;
@@ -160,12 +206,21 @@ export interface GitHubPort {
   createIssueComment(ref: PullRequestRef, body: string): Promise<GitHubComment>;
   updateIssueComment(ref: PullRequestRef, commentId: number, body: string): Promise<GitHubComment>;
   createReview(input: CreateReviewInput): Promise<void>;
+  getDefaultBranch(owner: string, repo: string): Promise<string>;
+  getFileContent(owner: string, repo: string, path: string, ref: string): Promise<string | undefined>;
+  listSourcePaths(owner: string, repo: string, ref: string): Promise<string[]>;
+  listReviewComments(ref: PullRequestRef): Promise<GitHubComment[]>;
+  findMemoryIssue(owner: string, repo: string): Promise<{ id: number; body: string } | undefined>;
+  upsertMemoryIssue(owner: string, repo: string, body: string, issueId?: number): Promise<{ id: number }>;
 }
 
 export interface GitHubComment {
   id: number;
   body: string;
   user: string;
+  thumbsUp: number;
+  thumbsDown: number;
+  path?: string;
 }
 
 export interface CreateReviewInput {
@@ -197,6 +252,17 @@ export interface AIReviewContext {
   pullRequest: PullRequestData;
   files: PullRequestFile[];
   commits: PullRequestCommit[];
+  playbook?: ReviewPlaybook;
+  memory?: ReviewMemory;
+  relatedFiles?: RelatedContextFile[];
+}
+
+export interface RelatedContextFile {
+  path: string;
+  content: string;
+  relation: "import" | "consumer";
+  via: string;
+  depth: number;
 }
 
 export interface AIProvider {

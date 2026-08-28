@@ -39,7 +39,7 @@ export class OpenAIProvider implements AIProvider {
 
   async reviewChunk(context: AIReviewContext, tools: ReviewToolExecutor): Promise<AIChunkReview> {
     const messages: ChatCompletionMessageParam[] = [
-      { role: "system", content: buildSystemPrompt() },
+      { role: "system", content: buildSystemPrompt(context) },
       { role: "user", content: buildUserPrompt(context) },
     ];
 

@@ -6,6 +6,7 @@ import {
   PrivateRepositoryAccessError,
   PullRequestNotFoundError,
 } from "../errors/index.js";
+import { MEMORY_ISSUE_TITLE, MEMORY_MARKER } from "../review/memory.js";
 import { redactSecrets } from "../security/redaction.js";
 import type {
   CreateReviewInput,
@@ -20,6 +21,19 @@ import type {
 interface OctokitErrorLike {
   status?: number;
   message?: string;
+}
+
+interface ReactionBundle {
+  "+1"?: number;
+  "-1"?: number;
+}
+
+interface CommentLike {
+  id: number;
+  body?: string | null;
+  user?: { login?: string | null } | null;
+  reactions?: ReactionBundle | null;
+  path?: string;
 }
 
 function asOctokitError(error: unknown): OctokitErrorLike {
@@ -48,6 +62,21 @@ function mapGitHubError(error: unknown, ref: PullRequestRef): never {
     throw new GitHubRateLimitError();
   }
   throw error;
+}
+
+function repoRef(owner: string, repo: string): PullRequestRef {
+  return { owner, repo, pullRequestNumber: 0 };
+}
+
+function mapComment(comment: CommentLike): GitHubComment {
+  return {
+    id: comment.id,
+    body: comment.body ?? "",
+    user: comment.user?.login ?? "unknown",
+    thumbsUp: comment.reactions?.["+1"] ?? 0,
+    thumbsDown: comment.reactions?.["-1"] ?? 0,
+    path: comment.path,
+  };
 }
 
 export class OctokitGitHubClient implements GitHubPort {
@@ -146,11 +175,7 @@ export class OctokitGitHubClient implements GitHubPort {
         issue_number: ref.pullRequestNumber,
         per_page: 100,
       });
-      return comments.map((comment) => ({
-        id: comment.id,
-        body: comment.body ?? "",
-        user: comment.user?.login ?? "unknown",
-      }));
+      return comments.map((comment) => mapComment(comment));
     } catch (error) {
       mapGitHubError(error, ref);
     }
@@ -164,7 +189,7 @@ export class OctokitGitHubClient implements GitHubPort {
         issue_number: ref.pullRequestNumber,
         body,
       });
-      return { id: data.id, body: data.body ?? body, user: data.user?.login ?? "unknown" };
+      return mapComment(data);
     } catch (error) {
       throw new GitHubPublishError(error instanceof Error ? error.message : "Failed to create PR comment.");
     }
@@ -182,7 +207,7 @@ export class OctokitGitHubClient implements GitHubPort {
         comment_id: commentId,
         body,
       });
-      return { id: data.id, body: data.body ?? body, user: data.user?.login ?? "unknown" };
+      return mapComment(data);
     } catch (error) {
       throw new GitHubPublishError(error instanceof Error ? error.message : "Failed to update PR comment.");
     }
@@ -206,6 +231,123 @@ export class OctokitGitHubClient implements GitHubPort {
       });
     } catch (error) {
       throw new GitHubPublishError(error instanceof Error ? error.message : "Failed to create PR review.");
+    }
+  }
+
+  async getDefaultBranch(owner: string, repo: string): Promise<string> {
+    try {
+      const { data } = await this.octokit.repos.get({ owner, repo });
+      return data.default_branch;
+    } catch (error) {
+      mapGitHubError(error, repoRef(owner, repo));
+    }
+  }
+
+  async getFileContent(owner: string, repo: string, path: string, ref: string): Promise<string | undefined> {
+    try {
+      const { data } = await this.octokit.repos.getContent({ owner, repo, path, ref });
+      if (Array.isArray(data) || data.type !== "file" || typeof data.content !== "string") {
+        return undefined;
+      }
+      return Buffer.from(data.content.replace(/\n/g, ""), "base64").toString("utf8");
+    } catch (error) {
+      if (asOctokitError(error).status === 404) {
+        return undefined;
+      }
+      mapGitHubError(error, repoRef(owner, repo));
+    }
+  }
+
+  async listSourcePaths(owner: string, repo: string, ref: string): Promise<string[]> {
+    try {
+      const { data: commit } = await this.octokit.git.getCommit({
+        owner,
+        repo,
+        commit_sha: ref,
+      });
+      const { data: tree } = await this.octokit.git.getTree({
+        owner,
+        repo,
+        tree_sha: commit.tree.sha,
+        recursive: "true",
+      });
+      return (tree.tree ?? [])
+        .filter((item) => item.type === "blob" && typeof item.path === "string")
+        .map((item) => item.path as string);
+    } catch (error) {
+      mapGitHubError(error, repoRef(owner, repo));
+    }
+  }
+
+  async listReviewComments(ref: PullRequestRef): Promise<GitHubComment[]> {
+    try {
+      const comments = await this.octokit.paginate(this.octokit.pulls.listReviewComments, {
+        owner: ref.owner,
+        repo: ref.repo,
+        pull_number: ref.pullRequestNumber,
+        per_page: 100,
+      });
+      return comments.map((comment) => mapComment(comment));
+    } catch (error) {
+      mapGitHubError(error, ref);
+    }
+  }
+
+  async findMemoryIssue(owner: string, repo: string): Promise<{ id: number; body: string } | undefined> {
+    try {
+      const iterator = this.octokit.paginate.iterator(this.octokit.issues.listForRepo, {
+        owner,
+        repo,
+        state: "all",
+        per_page: 100,
+        sort: "updated",
+        direction: "desc",
+      });
+      for await (const page of iterator) {
+        for (const issue of page.data) {
+          if (issue.pull_request) {
+            continue;
+          }
+          const body = issue.body ?? "";
+          if (issue.title === MEMORY_ISSUE_TITLE || body.includes(MEMORY_MARKER)) {
+            return { id: issue.number, body };
+          }
+        }
+      }
+      return undefined;
+    } catch (error) {
+      mapGitHubError(error, repoRef(owner, repo));
+    }
+  }
+
+  async upsertMemoryIssue(
+    owner: string,
+    repo: string,
+    body: string,
+    issueId?: number,
+  ): Promise<{ id: number }> {
+    try {
+      if (issueId !== undefined) {
+        const { data } = await this.octokit.issues.update({
+          owner,
+          repo,
+          issue_number: issueId,
+          title: MEMORY_ISSUE_TITLE,
+          body,
+        });
+        return { id: data.number };
+      }
+      const { data } = await this.octokit.issues.create({
+        owner,
+        repo,
+        title: MEMORY_ISSUE_TITLE,
+        body,
+      });
+      return { id: data.number };
+    } catch (error) {
+      throw new GitHubPublishError(
+        error instanceof Error ? error.message : "Failed to persist review memory.",
+      );
     }
   }
 }

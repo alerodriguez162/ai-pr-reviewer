@@ -58,6 +58,25 @@ const TOOL_DEFINITIONS: ToolDefinition[] = [
       additionalProperties: false,
     },
   },
+  {
+    name: "list_related_files",
+    description:
+      "List related repository files loaded for broader context: imports and consumers of changed code.",
+    parameters: { type: "object", properties: {}, additionalProperties: false },
+  },
+  {
+    name: "get_related_file_content",
+    description:
+      "Return full file content for a related context file (import dependency or consumer), not part of the PR diff.",
+    parameters: {
+      type: "object",
+      properties: {
+        path: { type: "string", description: "Repository-relative file path" },
+      },
+      required: ["path"],
+      additionalProperties: false,
+    },
+  },
 ];
 
 export class InMemoryReviewToolExecutor implements ReviewToolExecutor {
@@ -91,6 +110,10 @@ export class InMemoryReviewToolExecutor implements ReviewToolExecutor {
         };
       case "analyze_file":
         return this.analyzeFile(asString(args.path));
+      case "list_related_files":
+        return this.listRelatedFiles();
+      case "get_related_file_content":
+        return this.getRelatedFileContent(asString(args.path));
       default:
         return { error: `Unknown or disallowed tool: ${name}` };
     }
@@ -154,6 +177,32 @@ export class InMemoryReviewToolExecutor implements ReviewToolExecutor {
       sensitiveAreas: classifySensitiveFile(file.filename),
       test: isTestFile(file.filename),
       patch: wrapUntrusted("file_patch", file.patch ?? "[no patch available]"),
+    };
+  }
+
+  private listRelatedFiles(): unknown {
+    return (this.context.relatedFiles ?? []).map((file) => ({
+      path: file.path,
+      relation: file.relation,
+      via: file.via,
+      depth: file.depth,
+      chars: file.content.length,
+    }));
+  }
+
+  private getRelatedFileContent(path: string): unknown {
+    const file = (this.context.relatedFiles ?? []).find((item) => item.path === path);
+    if (!file) {
+      return {
+        error:
+          "Related file is not in the loaded context. Only imports and consumers discovered from changed files are available.",
+      };
+    }
+    return {
+      path: file.path,
+      relation: file.relation,
+      via: file.via,
+      content: wrapUntrusted("related_file_content", file.content),
     };
   }
 }

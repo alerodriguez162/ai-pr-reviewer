@@ -9,12 +9,25 @@ import { applyRecommendationGuardrails, calculateRiskScore, riskLevelFromScore }
 import { uniqueSensitiveAreas } from "../security/sensitive.js";
 import { isTestFile } from "../security/generated.js";
 import { redactSecrets } from "../security/redaction.js";
+import { EMPTY_PLAYBOOK, PLAYBOOK_PATHS, isPlaybookEmpty, parsePlaybook } from "./playbook.js";
+import {
+  applyLearning,
+  harvestFeedback,
+  mergeMemory,
+  parseMemory,
+  serializeMemory,
+} from "./memory.js";
+import { loadRelatedContext, type LoadedReviewContext } from "../context/loader.js";
 import type {
   AIChunkReview,
+  GitHubPort,
   PullRequestData,
   PullRequestReview,
   ReviewFinding,
+  ReviewLogger,
+  ReviewMemory,
   ReviewOptions,
+  ReviewPlaybook,
   TestingAssessment,
 } from "../types/index.js";
 
@@ -22,15 +35,29 @@ export async function reviewPullRequest(options: ReviewOptions): Promise<PullReq
   const logger = options.logger ?? createLogger();
   const github = options.github ?? createGitHub(options.githubToken);
   const ai = options.aiProvider ?? createOpenAI(options);
-
-  logger.info("Fetching PR metadata...");
-  const pullRequest = await github.getPullRequest({
+  const ref = {
     owner: options.owner,
     repo: options.repo,
     pullRequestNumber: options.pullRequest,
-  });
+  };
+
+  logger.info("Fetching PR metadata...");
+  const [pullRequest, learned] = await Promise.all([
+    github.getPullRequest(ref),
+    resolvePlaybookAndMemory(options, github, logger),
+  ]);
+  const { playbook, memory, memoryIssueId } = learned;
 
   logger.info(`Found ${pullRequest.files.length} changed files.`);
+
+  const relatedContext = await loadRelatedContext(
+    github,
+    options.owner,
+    options.repo,
+    pullRequest,
+    playbook,
+    logger,
+  );
 
   const plan = planChunks(pullRequest.files, {
     maxFiles: options.maxFiles ?? 40,
@@ -53,19 +80,114 @@ export async function reviewPullRequest(options: ReviewOptions): Promise<PullReq
       pullRequest,
       files: chunk.files,
       commits: pullRequest.commits,
+      playbook,
+      memory,
+      relatedFiles: relatedContext.files,
     });
     const result = await ai.reviewChunk(
-      { pullRequest, files: chunk.files, commits: pullRequest.commits },
+      {
+        pullRequest,
+        files: chunk.files,
+        commits: pullRequest.commits,
+        playbook,
+        memory,
+        relatedFiles: relatedContext.files,
+      },
       tools,
     );
     chunkReviews.push(result);
   }
 
   logger.info("Aggregating findings...");
-  const review = assembleReview(pullRequest, plan, chunkReviews, options);
+  const review = assembleReview(
+    pullRequest,
+    plan,
+    chunkReviews,
+    options,
+    playbook,
+    memory,
+    relatedContext,
+  );
+
+  if (options.persistMemory !== false) {
+    try {
+      await github.upsertMemoryIssue(
+        options.owner,
+        options.repo,
+        serializeMemory(memory),
+        memoryIssueId,
+      );
+    } catch {
+      logger.warn("Could not persist review memory.");
+    }
+  }
+
   logger.info(`Calculated risk score: ${review.score}.`);
   logger.info("Review complete.");
   return review;
+}
+
+async function resolvePlaybookAndMemory(
+  options: ReviewOptions,
+  github: GitHubPort,
+  logger: ReviewLogger,
+): Promise<{ playbook: ReviewPlaybook; memory: ReviewMemory; memoryIssueId?: number }> {
+  const playbook = options.playbook ?? (await loadPlaybookFromDefaultBranch(github, options, logger));
+
+  let memory = options.memory ?? { entries: [] };
+  let memoryIssueId: number | undefined;
+  if (!options.memory) {
+    try {
+      const issue = await github.findMemoryIssue(options.owner, options.repo);
+      if (issue) {
+        memory = parseMemory(issue.body);
+        memoryIssueId = issue.id;
+      }
+    } catch {
+      logger.warn("Could not load review memory; continuing without it.");
+    }
+  }
+
+  try {
+    const ref = {
+      owner: options.owner,
+      repo: options.repo,
+      pullRequestNumber: options.pullRequest,
+    };
+    const [issueComments, reviewComments] = await Promise.all([
+      github.listIssueComments(ref),
+      github.listReviewComments(ref),
+    ]);
+    memory = mergeMemory(memory, harvestFeedback([...issueComments, ...reviewComments]));
+  } catch {
+    logger.warn("Could not harvest review feedback; continuing with existing memory.");
+  }
+
+  return { playbook, memory, memoryIssueId };
+}
+
+async function loadPlaybookFromDefaultBranch(
+  github: GitHubPort,
+  options: ReviewOptions,
+  logger: ReviewLogger,
+): Promise<ReviewPlaybook> {
+  try {
+    // Always the default branch — never the PR head — to block prompt injection via playbook files.
+    const defaultBranch = await github.getDefaultBranch(options.owner, options.repo);
+    for (const path of PLAYBOOK_PATHS) {
+      const content = await github.getFileContent(options.owner, options.repo, path, defaultBranch);
+      if (content !== undefined) {
+        const playbook = parsePlaybook(content);
+        if (!isPlaybookEmpty(playbook)) {
+          logger.info(`Loaded playbook from ${path} on ${defaultBranch}.`);
+        }
+        return playbook;
+      }
+    }
+  } catch {
+    logger.warn("Could not load playbook from the default branch; continuing without it.");
+  }
+  return EMPTY_PLAYBOOK;
 }
 
 function assembleReview(
@@ -73,13 +195,17 @@ function assembleReview(
   plan: ReturnType<typeof planChunks>,
   chunkReviews: AIChunkReview[],
   options: ReviewOptions,
+  playbook: ReviewPlaybook,
+  memory: ReviewMemory,
+  relatedContext: LoadedReviewContext,
 ): PullRequestReview {
   const rawFindings = chunkReviews.flatMap((chunk) => chunk.findings);
-  const findings = dedupeFindings(
+  const unfiltered = dedupeFindings(
     rawFindings
       .filter((finding) => options.reviewSecurity !== false || finding.category !== "security")
       .map((finding, index) => normalizeFinding(toFinding(finding, index), index)),
   );
+  const { findings, suppressed } = applyLearning(unfiltered, playbook, memory);
 
   const testsDetected =
     pullRequest.files.some((file) => isTestFile(file.filename)) ||
@@ -140,6 +266,11 @@ function assembleReview(
       filesReviewed: plan.chunks.reduce((sum, chunk) => sum + chunk.files.length, 0),
       filesSkippedGenerated: plan.skippedGenerated.length,
       filesSkippedOversized: plan.skippedOversized.length,
+      playbookLoaded: !isPlaybookEmpty(playbook),
+      memoryEntries: memory.entries.length,
+      suppressedFindings: suppressed.length,
+      contextFilesLoaded: relatedContext.files.length,
+      contextTruncated: relatedContext.truncated,
     },
   };
 }

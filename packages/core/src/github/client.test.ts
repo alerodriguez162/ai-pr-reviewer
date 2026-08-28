@@ -6,6 +6,7 @@ import type { Octokit } from "@octokit/rest";
 function fakeOctokit(overrides: {
   get?: () => Promise<unknown>;
   paginate?: (endpoint: unknown, params: unknown) => Promise<unknown[]>;
+  getContent?: () => Promise<unknown>;
   status?: number;
   message?: string;
 }): Octokit {
@@ -15,17 +16,42 @@ function fakeOctokit(overrides: {
     throw error;
   };
 
+  const paginate = Object.assign(overrides.paginate ?? (async () => []), {
+    iterator: async function* () {
+      yield { data: [] };
+    },
+  });
+
   return {
     pulls: {
       get: overrides.get ?? fail,
       listFiles: { endpoint: "pulls.listFiles" },
       listCommits: { endpoint: "pulls.listCommits" },
+      listReviewComments: { endpoint: "pulls.listReviewComments" },
+      createReview: async () => ({ data: {} }),
     },
-    paginate: overrides.paginate ?? (async () => []),
+    repos: {
+      get: async () => ({ data: { default_branch: "main" } }),
+      getContent:
+        overrides.getContent ??
+        (async () => {
+          const error = new Error("Not Found") as Error & { status?: number };
+          error.status = 404;
+          throw error;
+        }),
+    },
+    paginate,
     issues: {
       listComments: { endpoint: "issues.listComments" },
-      createComment: async () => ({ data: { id: 1, body: "x", user: { login: "bot" } } }),
-      updateComment: async () => ({ data: { id: 1, body: "x", user: { login: "bot" } } }),
+      listForRepo: { endpoint: "issues.listForRepo" },
+      createComment: async () => ({
+        data: { id: 1, body: "x", user: { login: "bot" }, reactions: { "+1": 0, "-1": 0 } },
+      }),
+      updateComment: async () => ({
+        data: { id: 1, body: "x", user: { login: "bot" }, reactions: { "+1": 0, "-1": 0 } },
+      }),
+      create: async () => ({ data: { number: 11, body: "memory" } }),
+      update: async () => ({ data: { number: 11, body: "memory" } }),
     },
   } as unknown as Octokit;
 }
@@ -105,5 +131,60 @@ describe("OctokitGitHubClient", () => {
     await expect(
       client.getPullRequest({ owner: "acme", repo: "app", pullRequestNumber: 1 }),
     ).rejects.toBeInstanceOf(GitHubRateLimitError);
+  });
+
+  it("returns the default branch and treats missing playbook files as undefined", async () => {
+    const client = new OctokitGitHubClient("token", fakeOctokit({}));
+    await expect(client.getDefaultBranch("acme", "app")).resolves.toBe("main");
+    await expect(client.getFileContent("acme", "app", ".ai-pr-reviewer.yml", "main")).resolves.toBeUndefined();
+  });
+
+  it("decodes base64 file content from the contents API", async () => {
+    const raw = "focus:\n  - stock\n";
+    const client = new OctokitGitHubClient(
+      "token",
+      fakeOctokit({
+        getContent: async () => ({
+          data: {
+            type: "file",
+            content: Buffer.from(raw).toString("base64"),
+            encoding: "base64",
+          },
+        }),
+      }),
+    );
+    await expect(client.getFileContent("acme", "app", ".ai-pr-reviewer.yml", "main")).resolves.toBe(raw);
+  });
+
+  it("maps review comments with path and reactions", async () => {
+    const client = new OctokitGitHubClient(
+      "token",
+      fakeOctokit({
+        paginate: async () => [
+          {
+            id: 9,
+            body: "<!-- finding-fp:testing:missing-tests -->",
+            user: { login: "dev" },
+            path: "src/api/users.ts",
+            reactions: { "+1": 1, "-1": 2 },
+          },
+        ],
+      }),
+    );
+    const comments = await client.listReviewComments({
+      owner: "acme",
+      repo: "app",
+      pullRequestNumber: 1,
+    });
+    expect(comments).toEqual([
+      {
+        id: 9,
+        body: "<!-- finding-fp:testing:missing-tests -->",
+        user: "dev",
+        path: "src/api/users.ts",
+        thumbsUp: 1,
+        thumbsDown: 2,
+      },
+    ]);
   });
 });
