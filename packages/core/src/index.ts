@@ -32,6 +32,7 @@ import {
   findingMarker,
   MEMORY_ISSUE_TITLE,
 } from "./review/memory.js";
+import { filterKnownFalsePositives, isWorkflowSecretsFalsePositive } from "./review/false-positives.js";
 import { loadRelatedContext } from "./context/loader.js";
 import { DEFAULT_CONTEXT_CONFIG } from "./context/expansion.js";
 
@@ -104,4 +105,6 @@ export {
   MEMORY_ISSUE_TITLE,
   loadRelatedContext,
   DEFAULT_CONTEXT_CONFIG,
+  filterKnownFalsePositives,
+  isWorkflowSecretsFalsePositive,
 };

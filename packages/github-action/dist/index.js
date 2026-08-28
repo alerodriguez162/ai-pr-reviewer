@@ -49630,6 +49630,33 @@ function isPlaybookEmpty(playbook) {
   return playbook.focus.length === 0 && playbook.ignoreCategories.length === 0 && playbook.ignorePaths.length === 0 && playbook.ignoreTitles.length === 0 && playbook.domainNotes.length === 0 && !playbook.style && !playbook.context?.enabled;
 }
 
+// packages/core/dist/review/false-positives.js
+var WORKFLOW_PATH = /^\.github\/workflows\//;
+function isWorkflowSecretsFalsePositive(finding) {
+  if (finding.category !== "security" || !finding.file || !WORKFLOW_PATH.test(finding.file)) {
+    return false;
+  }
+  const text = `${finding.title} ${finding.description} ${finding.suggestion ?? ""}`.toLowerCase();
+  const aboutSecrets = text.includes("secret") || text.includes("openai_api_key") || text.includes("api key") || text.includes("ci/cd");
+  if (!aboutSecrets) {
+    return false;
+  }
+  const realExposure = /hardcod|plaintext|committed to|in source|echo|print|log.*secret|exposed in (the )?(repo|code|file)/i.test(text);
+  return !realExposure;
+}
+function filterKnownFalsePositives(findings) {
+  const suppressed = [];
+  const kept = [];
+  for (const finding of findings) {
+    if (isWorkflowSecretsFalsePositive(finding)) {
+      suppressed.push(finding);
+      continue;
+    }
+    kept.push(finding);
+  }
+  return { findings: kept, suppressed };
+}
+
 // packages/core/dist/context/loader.js
 async function loadRelatedContext(github, owner, repo, pullRequest, playbook, logger) {
   const config = resolveContextConfig(playbook);
@@ -49843,7 +49870,9 @@ async function loadPlaybookFromDefaultBranch(github, options, logger) {
 function assembleReview(pullRequest, plan, chunkReviews, options, playbook, memory, relatedContext) {
   const rawFindings = chunkReviews.flatMap((chunk) => chunk.findings);
   const unfiltered = dedupeFindings(rawFindings.filter((finding) => options.reviewSecurity !== false || finding.category !== "security").map((finding, index) => normalizeFinding(toFinding(finding, index), index)));
-  const { findings, suppressed } = applyLearning(unfiltered, playbook, memory);
+  const { findings: learned, suppressed: suppressedByLearning } = applyLearning(unfiltered, playbook, memory);
+  const { findings, suppressed: suppressedFalsePositives } = filterKnownFalsePositives(learned);
+  const suppressed = [...suppressedByLearning, ...suppressedFalsePositives];
   const testsDetected = pullRequest.files.some((file) => isTestFile(file.filename)) || chunkReviews.some((chunk) => chunk.testingAssessment.testsDetected);
   const testingAssessment = mergeTesting(chunkReviews, testsDetected);
   const insufficientContext = chunkReviews.some((chunk) => chunk.insufficientContext);

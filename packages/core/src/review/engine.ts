@@ -17,6 +17,7 @@ import {
   parseMemory,
   serializeMemory,
 } from "./memory.js";
+import { filterKnownFalsePositives } from "./false-positives.js";
 import { loadRelatedContext, type LoadedReviewContext } from "../context/loader.js";
 import type {
   AIChunkReview,
@@ -205,7 +206,13 @@ function assembleReview(
       .filter((finding) => options.reviewSecurity !== false || finding.category !== "security")
       .map((finding, index) => normalizeFinding(toFinding(finding, index), index)),
   );
-  const { findings, suppressed } = applyLearning(unfiltered, playbook, memory);
+  const { findings: learned, suppressed: suppressedByLearning } = applyLearning(
+    unfiltered,
+    playbook,
+    memory,
+  );
+  const { findings, suppressed: suppressedFalsePositives } = filterKnownFalsePositives(learned);
+  const suppressed = [...suppressedByLearning, ...suppressedFalsePositives];
 
   const testsDetected =
     pullRequest.files.some((file) => isTestFile(file.filename)) ||
