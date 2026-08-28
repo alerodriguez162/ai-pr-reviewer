@@ -1,0 +1,18 @@
+{
+  "number": 13,
+  "title": "Rewrite storefront",
+  "description": "Large change set.",
+  "author": "dev",
+  "state": "open",
+  "createdAt": "2026-08-01T10:00:00Z",
+  "updatedAt": "2026-08-01T11:00:00Z",
+  "baseBranch": "main",
+  "headBranch": "feat/huge",
+  "headSha": "large001",
+  "additions": 1800,
+  "deletions": 200,
+  "changedFiles": 8,
+  "mergeable": true,
+  "commits": [{ "sha": "large001", "message": "rewrite", "author": "dev" }],
+  "files": []
+}

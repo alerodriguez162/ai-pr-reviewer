@@ -1,0 +1,65 @@
+name: AI PR Reviewer
+description: Analyze pull requests with an LLM and publish a structured review comment.
+author: larva-factory
+
+inputs:
+  github-token:
+    description: GitHub token used to read the pull request and publish the review. Prefer secrets.GITHUB_TOKEN.
+    required: true
+  openai-api-key:
+    description: OpenAI API key. Store this as a repository or organization secret. Never log it.
+    required: true
+  severity-threshold:
+    description: Minimum severity for inline comments (info, low, medium, high, critical).
+    required: false
+    default: medium
+  post-review:
+    description: When true, publish or update the persistent PR summary comment.
+    required: false
+    default: "true"
+  fail-on-severity:
+    description: Fail the job when a finding at or above this severity is present.
+    required: false
+    default: critical
+  model:
+    description: OpenAI chat model to use.
+    required: false
+    default: gpt-4o-mini
+  max-files:
+    description: Maximum number of non-generated files sent to the model.
+    required: false
+    default: "40"
+  max-diff-size:
+    description: Maximum patch characters per file sent to the model.
+    required: false
+    default: "8000"
+  review-tests:
+    description: Include test files in the review.
+    required: false
+    default: "true"
+  review-security:
+    description: Include security findings in the published review.
+    required: false
+    default: "true"
+
+outputs:
+  score:
+    description: Deterministic review score from 0-100 (higher is better).
+  risk-level:
+    description: low, medium, high, or critical.
+  recommendation:
+    description: approve, approve_with_suggestions, request_changes, or manual_review_required.
+  findings-count:
+    description: Number of findings after aggregation.
+  critical-findings:
+    description: Number of critical findings.
+  high-findings:
+    description: Number of high findings.
+
+runs:
+  using: node20
+  main: packages/github-action/dist/index.js
+
+branding:
+  icon: eye
+  color: purple

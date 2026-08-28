@@ -1,0 +1,27 @@
+{
+  "number": 12,
+  "title": "Add checkout total helper",
+  "description": "New billing math without tests.",
+  "author": "dev",
+  "state": "open",
+  "createdAt": "2026-08-01T10:00:00Z",
+  "updatedAt": "2026-08-01T11:00:00Z",
+  "baseBranch": "main",
+  "headBranch": "feat/billing",
+  "headSha": "miss001",
+  "additions": 30,
+  "deletions": 0,
+  "changedFiles": 1,
+  "mergeable": true,
+  "commits": [{ "sha": "miss001", "message": "add totals", "author": "dev" }],
+  "files": [
+    {
+      "filename": "src/payments/totals.ts",
+      "status": "added",
+      "additions": 30,
+      "deletions": 0,
+      "changes": 30,
+      "patch": "@@ -0,0 +1,30 @@\n+export function total(items: number[]) { return items.reduce((a, b) => a + b, 0); }\n"
+    }
+  ]
+}

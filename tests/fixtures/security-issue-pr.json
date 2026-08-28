@@ -1,0 +1,27 @@
+{
+  "number": 11,
+  "title": "Relax auth for profile updates",
+  "description": "Makes the profile endpoint easier to use.",
+  "author": "dev",
+  "state": "open",
+  "createdAt": "2026-08-01T10:00:00Z",
+  "updatedAt": "2026-08-01T11:00:00Z",
+  "baseBranch": "main",
+  "headBranch": "feat/auth",
+  "headSha": "sec001",
+  "additions": 12,
+  "deletions": 2,
+  "changedFiles": 1,
+  "mergeable": true,
+  "commits": [{ "sha": "sec001", "message": "skip auth", "author": "dev" }],
+  "files": [
+    {
+      "filename": "src/auth/middleware.ts",
+      "status": "modified",
+      "additions": 12,
+      "deletions": 2,
+      "changes": 14,
+      "patch": "@@ -8,6 +8,12 @@\n+  if (!user) {\n+    return true;\n+  }\n"
+    }
+  ]
+}
